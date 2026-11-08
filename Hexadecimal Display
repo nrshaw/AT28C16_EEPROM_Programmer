@@ -1,0 +1,225 @@
+//PROJECT  :EEPROM Programmer for Hexadecimal Display
+//PURPOSE  :To Program the AT28C16 EEPROM with Dave Feinberg's Chumpanese Program and
+//PURPOSE  :Neal Shaw's Chumpanese Program Mapped to Hexadecimal for a 7-Segment Display
+//COURSE   :TEJ4M
+//AUTHOR   :Neal Shaw
+//DATE     :Nov. 7, 2026
+//MCU      :328p (Nano)
+//STATUS   :Working
+//REFERENCE:http://darcy.rsgc.on.ca/ACES/TEI4M/4BitComputer/index.html#PROGRAMEEPROM
+//REFERENCE:https://www.youtube.com/watch?v=K88pgWhEb1M
+//NOTES    :There are 2 unused Arduino Nano pins that can add two more address bits
+//NOTES    :All bits cannot be accessed without external support such as a shift register
+
+//Address Pins:
+#define Add0 A2
+#define Add1 A3
+#define Add2 A4
+#define Add3 A5
+#define Add4 13
+#define Add5 2
+
+const byte addressPins[] = {
+  Add0, Add1, Add2, Add3, Add4, Add5
+};
+
+//EEPROM Data Pins:
+#define IO0 7
+#define IO1 6
+#define IO2 5
+#define IO3 8
+#define IO4 9
+#define IO5 10
+#define IO6 11
+#define IO7 12
+
+const byte ioPins[] = {
+  IO0, IO1, IO2, IO3,
+  IO4, IO5, IO6, IO7
+};
+
+//EEPROM Control Pins:
+#define WE A1
+#define OE A0
+
+//EEPROM Program to Display to Hex:
+//ALL PROGRAM VALUES ARE TO DISPLAY ACTUAL VALUE TO 7-SEG DISPLAY
+//ACTUAL VALUES ARE COMMENTED NEXT TO EACH DISPLAY VALUE
+const byte programData[] = {
+  //Addresses 0-15 (Low Nibble Dave Feinberg's Program):
+  0b01011011, //2
+  0b00111111, //0
+  0b00000110, //1
+  0b01011011, //2
+  0b00111111, //0
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001,             //F, F
+  //Addresses 16-31 (High Nibble Dave Feinberg's Program):
+  0b01111111, //8
+  0b00000110, //1
+  0b01011011, //2
+  0b01111101, //6
+  0b00111001, //C
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001,             //F, F
+  //Addresses 32-47 (Low Nibble Neal Shaw's Program):
+  0b00111111, //0
+  0b00111111, //0
+  0b00111111, //0
+  0b00000110, //1
+  0b00111111, //0
+  0b00111111, //0
+  0b01111111, //8
+  0b00111111, //0
+  0b00111111, //0
+  0b00111111, //0
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  //Addresses 48-63 (High Nibble Neal Shaw's Program):
+  0b01111111, //8
+  0b00000110, //1
+  0b01110111, //A
+  0b01011011, //2
+  0b01111101, //6
+  0b01100110, //4
+  0b01111001, //E
+  0b00111001, //C
+  0b01111101, //6
+  0b00111001, //C
+  0b01110001, 0b01110001, 0b01110001, //F, F, F
+  0b01110001, 0b01110001, 0b01110001  //F, F, F
+};
+
+void setAddress(int address) {  //Set Address
+  for (byte i = 0; i < sizeof(addressPins); i++) {
+    digitalWrite(
+      addressPins[i],
+      (address >> i) & 1);
+  }
+}
+
+void setDataDirection(byte direction) { //Set Data Direction
+  for (byte i = 0; i < 8; i++) {
+    pinMode(ioPins[i], direction);
+  }
+}
+
+byte readEEPROM(int address) {  //Read EEPROM
+  //Disable EEPROM Output While Configuring:
+  digitalWrite(OE, HIGH);
+  digitalWrite(WE, HIGH);
+  setDataDirection(INPUT);    //Arduino Reading Data
+  setAddress(address);        //Select Address
+  digitalWrite(OE, LOW);      //Enable EEPROM Output
+  delayMicroseconds(1);
+  byte data = 0;
+  //Read All 8 Bits in Address
+  for (byte i = 0; i < 8; i++) {
+    if (digitalRead(ioPins[i])) {
+      data |= (1 << i);
+    }
+  }
+  digitalWrite(OE, HIGH);     //Disable EEPROM Output
+  return data;
+}
+
+void writeEEPROM(int address, byte data) {  //Write EEPROM
+  digitalWrite(OE, HIGH);         //Disable EEPROM Output
+  digitalWrite(WE, HIGH);         //Set Write to Inactive
+  setAddress(address);            //Select Address
+  setDataDirection(OUTPUT);       //Arduino Sending Data
+  for (byte i = 0; i < 8; i++) {  //Send Data to EEPROM
+    digitalWrite(
+      ioPins[i],
+      (data >> i) & 1);
+  }
+  PORTC &= ~_BV(PC1);  //WE LOW
+  PORTC |= _BV(PC1);   //WE HIGH
+  //Allow EEPROM Internal Write Cycle to Finish:
+  delay(2);
+}
+
+void printContents() {          //Print EEPROM Contents
+  Serial.println();
+  Serial.println("EEPROM CONTENTS");
+  Serial.println("----------------------------");
+  //Display All Addresses Programmed:
+  for (int address = 0; address < sizeof(programData); address++) {
+    byte data = readEEPROM(address);
+    Serial.print("Address 0x"); //Print Address
+    if (address < 16) {
+      Serial.print("0");
+    }
+    Serial.print(address, HEX);
+    Serial.print(" : 0x");      //Print Data in Address in Hex
+    if (data < 16) {
+      Serial.print("0");
+    }
+    Serial.print(data, HEX);
+    Serial.print(" : ");
+    //Print Data in Address in Binary:
+    for (int bit = 7; bit >= 0; bit--) {
+      Serial.print((data >> bit) & 1);
+    }
+    Serial.println();
+  }
+  Serial.println("----------------------------");
+  Serial.println("Reading complete.");
+}
+
+void setup() {
+  Serial.begin(57600);    //Initialize Serial Monitor
+  for (byte i = 0; i < sizeof(addressPins); i++) {  //Set Address Pins Low
+    pinMode(addressPins[i], OUTPUT);
+    digitalWrite(addressPins[i], LOW);
+  }
+  digitalWrite(WE, HIGH); //EEPROM Control Pins
+  pinMode(WE, OUTPUT);
+  digitalWrite(OE, HIGH);
+  pinMode(OE, OUTPUT);
+
+  Serial.println("AT28C16 EEPROM PROGRAMMER");    //Header
+  Serial.println("============================"); //Divider
+
+  //Program EEPROM
+  Serial.println("Programming EEPROM...");
+  for (int address = 0; address < sizeof(programData); address++) {
+    writeEEPROM(address, programData[address]);
+    Serial.print("Written address: 0x");  //Write all Addresses Being Programmed
+    if (address < 16) {
+      Serial.print("0");
+    }
+    Serial.println(address, HEX);
+  }
+  Serial.println();
+  Serial.println("Programming complete.");
+
+  //Verify Programming:
+  Serial.println();
+  Serial.println("Verifying EEPROM...");
+  bool success = true;
+  for (int address = 0; address < sizeof(programData); address++) {
+    byte actual = readEEPROM(address);    //Read Actual Data
+    if (actual != programData[address]) { //Actual is Not Expected
+      success = false;
+      Serial.print("ERROR at address 0x");
+      Serial.print(address, HEX);
+      Serial.print(" Expected: 0x");
+      Serial.print(programData[address], HEX);
+      Serial.print(" Received: 0x");
+      Serial.println(actual, HEX);
+    }
+  }
+  if (success) {    //Check Success or Failure
+    Serial.println("Verification successful!");
+  } else {
+    Serial.println("Verification FAILED!");
+  }
+  printContents();  //Display EEPROM Contents
+}
+
+void loop() {}
